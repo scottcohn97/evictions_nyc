@@ -1,0 +1,76 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(tidyverse)
+library(jsonlite)
+library(tidygeocoder)
+library(sf)
+library(mapview)
+```
+
+# Import data via API
+
+```{r}
+
+sql_text <- "" # import all 
+data_url <- "https://data.cityofnewyork.us/resource/6z8x-wfk4.json"
+
+df <- fromJSON(paste0(data_url, sql_text))
+
+```
+
+# Convert dates
+
+```{r}
+# trim char off date string
+df$executed_date <- substr(df$executed_date, 1, nchar(df$executed_date) - 13) 
+# convert to date
+df$executed_date <- lubridate::ymd(df$executed_date)
+```
+
+# Geocode addresses
+
+```{r, cache=TRUE}
+# separate addresses
+orig_addresses <- df %>% 
+  select(docket_number, eviction_address, borough, eviction_zip) %>% 
+  mutate(addresses = paste0(eviction_address, ", ", borough, ", NY"),
+         zip = eviction_zip) %>% 
+  select(- c(eviction_address, borough, eviction_zip))
+
+# geocode (prioritize census over osm)
+# ! Takes a while to run
+orig_addresses <- orig_addresses %>% 
+  geocode(address = addresses, 
+  method = 'cascade',
+  verbose = TRUE)
+
+```
+
+# Join lat/long with data
+
+```{r}
+
+orig_addresses <- orig_addresses %>% select(-c(zip))
+
+df <- left_join(df, orig_addresses, by = "docket_number")
+
+```
+
+# Visualize 
+
+```{r}
+
+locations_sf <- df %>% 
+  drop_na() %>% 
+  st_as_sf(coords = c("long", "lat"), crs = 4326)
+
+mapview(locations_sf)
+
+```
+
